@@ -16,6 +16,7 @@
 package keeper
 
 import (
+	"fmt"
 	"math/big"
 
 	errorsmod "cosmossdk.io/errors"
@@ -34,7 +35,6 @@ import (
 	ethermint "github.com/evmos/ethermint/types"
 	"github.com/evmos/ethermint/x/evm/statedb"
 	"github.com/evmos/ethermint/x/evm/types"
-	evm "github.com/evmos/ethermint/x/evm/vm"
 )
 
 // Keeper grants access to the EVM module state and implements the go-ethereum StateDB interface.
@@ -70,14 +70,13 @@ type Keeper struct {
 
 	// EVM Hooks for tx post-processing
 	hooks types.EvmHooks
-
-	// custom stateless precompiled smart contracts
-	customPrecompiles evm.PrecompiledContracts
-
-	// evm constructor function
-	evmConstructor evm.Constructor
 	// Legacy subspace
 	ss paramstypes.Subspace
+
+	// precompiles defines the map of all available precompiled smart contracts.
+	// Some these precompiled contracts might not be active depending on the EVM
+	// parameters.
+	precompiles map[common.Address]vm.PrecompiledContract
 }
 
 // NewKeeper generates new evm module keeper
@@ -89,8 +88,6 @@ func NewKeeper(
 	bankKeeper types.BankKeeper,
 	sk types.StakingKeeper,
 	fmk types.FeeMarketKeeper,
-	customPrecompiles evm.PrecompiledContracts,
-	evmConstructor evm.Constructor,
 	tracer string,
 	ss paramstypes.Subspace,
 ) *Keeper {
@@ -106,18 +103,16 @@ func NewKeeper(
 
 	// NOTE: we pass in the parameter space to the CommitStateDB in order to use custom denominations for the EVM operations
 	return &Keeper{
-		cdc:               cdc,
-		authority:         authority,
-		accountKeeper:     ak,
-		bankKeeper:        bankKeeper,
-		stakingKeeper:     sk,
-		feeMarketKeeper:   fmk,
-		storeKey:          storeKey,
-		transientKey:      transientKey,
-		customPrecompiles: customPrecompiles,
-		evmConstructor:    evmConstructor,
-		tracer:            tracer,
-		ss:                ss,
+		cdc:             cdc,
+		authority:       authority,
+		accountKeeper:   ak,
+		bankKeeper:      bankKeeper,
+		stakingKeeper:   sk,
+		feeMarketKeeper: fmk,
+		storeKey:        storeKey,
+		transientKey:    transientKey,
+		tracer:          tracer,
+		ss:              ss,
 	}
 }
 
@@ -392,4 +387,42 @@ func (k Keeper) AddTransientGasUsed(ctx sdk.Context, gasUsed uint64) (uint64, er
 	}
 	k.SetTransientGasUsed(ctx, result)
 	return result, nil
+}
+
+// WithPrecompiles sets the available precompiled contracts.
+func (k *Keeper) WithPrecompiles(precompiles map[common.Address]vm.PrecompiledContract) *Keeper {
+	if k.precompiles != nil {
+		panic("available precompiles map already set")
+	}
+
+	if len(precompiles) == 0 {
+		panic("empty precompiled contract map")
+	}
+
+	k.precompiles = precompiles
+	return k
+}
+
+// GetPrecompiles returns the available precompiled contracts.
+func (k *Keeper) GetPrecompiles() map[common.Address]vm.PrecompiledContract {
+	return k.precompiles
+}
+
+// Precompiles returns the subset of the available precompiled contracts that
+// are active given the current parameters.
+func (k Keeper) Precompiles(
+	activePrecompiles ...common.Address,
+) map[common.Address]vm.PrecompiledContract {
+	activePrecompileMap := make(map[common.Address]vm.PrecompiledContract)
+
+	for _, address := range activePrecompiles {
+		precompile, ok := k.precompiles[address]
+		if !ok {
+			panic(fmt.Sprintf("precompiled contract not initialized: %s", address))
+		}
+
+		activePrecompileMap[address] = precompile
+	}
+
+	return activePrecompileMap
 }

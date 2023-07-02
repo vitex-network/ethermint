@@ -85,6 +85,11 @@ func (s *StateDB) Keeper() Keeper {
 	return s.keeper
 }
 
+// Context returns the underlying `Keeper`
+func (s *StateDB) Context() sdk.Context {
+	return s.ctx
+}
+
 // AddLog adds a log, called by evm.
 func (s *StateDB) AddLog(log *ethtypes.Log) {
 	s.journal.append(addLogChange{})
