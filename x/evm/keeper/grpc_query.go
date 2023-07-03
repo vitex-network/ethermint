@@ -202,11 +202,18 @@ func (k Keeper) Code(c context.Context, req *types.QueryCodeRequest) (*types.Que
 	ctx := sdk.UnwrapSDKContext(c)
 
 	address := common.HexToAddress(req.Address)
-	acct := k.GetAccountWithoutBalance(ctx, address)
-
 	var code []byte
-	if acct != nil && acct.IsContract() {
-		code = k.GetCode(ctx, common.BytesToHash(acct.CodeHash))
+
+	_, isPrecompile := k.GetPrecompiles()[address]
+
+	if isPrecompile {
+		// return non-empty code to enable clients to call precompile contracts
+		code = []byte{0xFD} // opcode REVERT
+	} else {
+		acct := k.GetAccountWithoutBalance(ctx, address)
+		if acct != nil && acct.IsContract() {
+			code = k.GetCode(ctx, common.BytesToHash(acct.CodeHash))
+		}
 	}
 
 	return &types.QueryCodeResponse{
